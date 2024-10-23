@@ -61,7 +61,7 @@ pipeline {
 }
 
 
-3. Publish Artifact to S3**
+3. Publish Artifact to S3
 
 pipeline {
     agent any
