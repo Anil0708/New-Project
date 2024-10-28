@@ -1,0 +1,263 @@
+
+1. Kubernetes Cluster Setup with KOPS (AWS):
+
+
+curl -Lo kops https://github.com/kubernetes/kops/releases/download/1.24.0/kops-linux-amd64
+chmod +x kops
+sudo mv kops /usr/local/bin/kops
+
+
+export KOPS_STATE_STORE=s3: //Bucket name
+export AWS_ACCESS_KEY_ID= access_key
+export AWS_SECRET_ACCESS_KEY= secret_access_key
+
+
+kops create cluster --name=yourcluster.k8s.local --zones=us-east-1a --node-count=2 --node-size=t2.micro --master-size=t2.micro --dns-zone=yourdomain.com
+kops update cluster yourcluster.k8s.local --yes
+
+kubectl get nodes
+
+
+2. PostgreSQL StatefulSet Deployment:
+
+
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: postgres
+spec:
+  serviceName: "postgres"
+  replicas: 1
+  selector:
+    matchLabels:
+      app: postgres
+  template:
+    metadata:
+      labels:
+        app: postgres
+    spec:
+      containers:
+      - name: postgres
+        image: postgres:16
+        ports:
+        - containerPort: 5432
+        env:
+        - name: POSTGRES_USER
+          value: "admin"
+        - name: POSTGRES_PASSWORD
+          value: "admin123"
+        - name: POSTGRES_DB
+          value: Database
+        volumeMounts:
+        - name: postgres-storage
+          mountPath: /var/lib/postgresql/data
+  volumeClaimTemplates:
+  - metadata:
+      name: postgres-storage
+    spec:
+      accessModes: [ "ReadWriteOnce" ]
+      resources:
+        requests:
+          storage: 1Gi
+
+kubectl apply -f <StatefulSet.yaml>
+
+kubectl get statefulsets
+kubectl get pods
+
+
+3. Node.js Application Deployment from GitHub:
+
+
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: app-config
+data:
+  POSTGRES_HOST: postgres
+  POSTGRES_DB: Database
+
+
+apiVersion: v1
+kind: Secret
+metadata:
+  name: app-secrets
+type: Opaque
+data:
+  POSTGRES_USER: YWRtaW4=
+  POSTGRES_PASSWORD: YWRtaW4xMjM=
+
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: nodejs-app
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: nodejs-app
+  template:
+    metadata:
+      labels:
+        app: nodejs-app
+    spec:
+      containers:
+      - name: nodejs-app
+        image: Dockerhub-repo/nodejs-app-image
+        envFrom:
+        - configMapRef:
+            name: app-config
+        - secretRef:
+            name: app-secrets
+        ports:
+        - containerPort: 3000
+
+
+apiVersion: v1
+kind: Service
+metadata:
+  name: nodejs-app
+spec:
+  ports:
+    - port: 3000
+      targetPort: 3000
+  selector:
+    app: nodejs-app
+  type: ClusterIP
+
+kubectl apply -f <configmap.yaml> //apply ConfigMap and Secret
+kubectl apply -f <secret.yaml>
+
+kubectl apply -f <nodejs-deployment.yaml> //deploy the Node.js Application
+kubectl apply -f <nodejs-service.yaml>
+
+ 4. NGINX Ingress Controller Setup:
+
+
+kubectl apply -f https://raw.githubusercontent.com/kubernetes/ingress-nginx/main/deploy/static/provider/cloud/deploy.yaml
+
+
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: nodejs-ingress
+  annotations:
+    nginx.ingress.kubernetes.io/rewrite-target: /
+spec:
+  rules:
+  - host: www.domain.com
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: nodejs-app
+            port:
+              number: 3000
+
+kubectl apply -f <nodejs-ingress.yaml>
+
+kubectl get ingress
+
+
+5. Jenkins CI/CD Pipeline with GitHub Integration:
+
+
+pipeline {
+    agent any
+    stages {
+        stage('Clone') {
+            steps {
+                git 'https://github.com/Anil0708/New-Project.git'
+            }
+        }
+        stage('Build') {
+            steps {
+                sh 'npm install'
+            }
+        }
+        stage('Test') {
+            steps {
+                sh 'npm test'
+            }
+        }
+        stage('Docker Build') {
+            steps {
+                sh 'docker build -t repository/nodejs-app:${GIT_COMMIT} .'
+            }
+        }
+        stage('Push Image') {
+            steps {
+                withCredentials([string(credentialsId: 'dockerhub-credentials', variable: 'DOCKERHUB_PASSWORD')]) {
+                    sh 'docker login -u admin -p $DOCKERHUB_PASSWORD'
+                    sh 'docker push repository/nodejs-app:${GIT_COMMIT}'
+                }
+            }
+        }
+        stage('Deploy') {
+            steps {
+                sh 'kubectl apply -f nodejs-deployment.yaml -n <namespace>'
+            }
+        }
+    }
+}
+
+
+6. Monitoring Setup:
+
+
+kubectl apply -f https://github.com/prometheus-operator/prometheus-operator/bundle.yaml
+
+kubectl apply -f https://github.com/grafana/grafana-operator/bundle.yaml
+
+
+kubectl create namespace monitoring // creating a monitoring setup indetails
+
+
+kubectl apply -f https://github.com/prometheus-operator/prometheus-operator/raw/main/bundle.yaml -n monitoring
+
+
+kubectl apply -f https://github.com/grafana/grafana-operator/raw/main/bundle.yaml -n monitoring
+
+
+apiVersion: integreatly.org/v1alpha1
+kind: Grafana
+metadata:
+  name: grafana
+  namespace: monitoring
+spec:
+  ingress:
+    enabled: true
+  config:
+    log:
+      mode: "console"
+    security:
+      admin_user: "admin"
+      admin_password: "admin"
+  deployment:
+    replicas: 1
+
+
+kubectl apply -f grafana-instance.yaml -n monitoring
+
+
+apiVersion: v1
+kind: Service
+metadata:
+  name: grafana
+  namespace: monitoring
+spec:
+  type: LoadBalancer
+  ports:
+    - port: 3000
+      targetPort: 3000
+  selector:
+    app: grafana
+
+
+
+kubectl apply -f grafana-service.yaml
+
+later check on GUI
