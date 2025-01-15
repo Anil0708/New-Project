@@ -1,0 +1,199 @@
+
+ DigitalOcean Setup
+ Create a Droplet
+ Log in to your 
+ Navigate to Create - Droplets.
+ Select Ubuntu 22.04/RHEL  as the operating system.
+ Choose the plan (Basic with 1GB RAM and 1 CPU).
+ Add an SSH key or use a password for access.
+ Click ' Create Droplet'and wait for it to initialize.
+
+
+
+   
+   ssh root@52.234.46.144
+  
+
+
+   apt update
+   apt install -y openjdk-11-jdk wget
+   wget -q -O - https://pkg.jenkins.io/debian/jenkins.io.key | sudo apt-key add -
+   sh -c 'echo deb http://pkg.jenkins.io/debian-stable binary/ > /etc/apt/sources.list.d/jenkins.list'
+   apt update
+   apt install -y jenkins
+   systemctl start jenkins
+  
+
+
+   Open a browser and navigate to `http://52.234.46.144:8080.
+   
+
+
+
+   - Docker Pipeline
+   - Kubernetes
+   - Git
+   - Pipeline
+   - Blue Ocean (optional, for better UI)
+   - Credentials Binding
+
+
+
+1. Navigate to Manage Jenkins - Credentials - System - Global credentials .
+2. Add the following credentials:
+   
+     - ID: docker-hub
+     - Username: anil
+     - Password: anil.1234
+     - Kubernetes Config File:
+     - Kind: Secret file
+     - ID: kubeconfig
+     - File: Upload your /etc/kubeconfig.
+
+
+
+
+pipeline {
+    agent any
+
+    environment {
+        DOCKER_HUB_CREDENTIALS = credentials('docker-hub')
+        KUBECONFIG_CREDENTIALS = credentials('kubeconfig')
+        DOCKER_IMAGE = "anilk/node-todo-app:latest"
+    }
+
+    stages {
+        stage('Checkout Code') {
+            steps {
+                git branch: 'main', url: 'https://github.com/Anil0708/node-todo-cicd.git'
+            }
+        }
+
+        stage('Build and Test') {
+            steps {
+                sh 'npm install'
+                sh 'npm test'
+            }
+        }
+
+        stage('Docker Build and Push') {
+            steps {
+                script {
+                    sh """
+                    docker login -u ${DOCKER_HUB_CREDENTIALS_USR} -p ${DOCKER_HUB_CREDENTIALS_PSW}
+                    docker build -t ${DOCKER_IMAGE} .
+                    docker push ${DOCKER_IMAGE}
+                    """
+                }
+            }
+        }
+
+        stage('Deploy to Kubernetes') {
+            steps {
+                withCredentials([file(credentialsId: 'kubeconfig', variable: 'KUBECONFIG')]) {
+                    sh """
+                    export KUBECONFIG=${KUBECONFIG}
+                    kubectl apply -f k8s-deployment.yaml
+                    kubectl apply -f k8s-service.yaml
+                    """
+                }
+            }
+        }
+    }
+
+    post {
+        success {
+            echo "Deployment successful!"
+        }
+        failure {
+            echo "Deployment failed!"
+        }
+    }
+}
+
+
+
+ Prepare Kubernetes Deployment Files
+
+Step 1: Create Kubernetes YAML Files
+
+1. k8s-deployment.yaml:
+   
+   apiVersion: apps/v1
+   kind: Deployment
+   metadata:
+     name: node-todo-app
+     namespace: default
+   spec:
+     replicas: 2
+     selector:
+       matchLabels:
+         app: node-todo-app
+     template:
+       metadata:
+         labels:
+           app: node-todo-app
+       spec:
+         containers:
+         - name: node-todo-container
+           image: anilk/node-todo-app:latest
+           ports:
+           - containerPort: 3000
+
+
+ k8s-service.yaml
+   
+   apiVersion: v1
+   kind: Service
+   metadata:
+     name: node-todo-service
+     namespace: default
+   spec:
+     selector:
+       app: node-todo-app
+     ports:
+     - protocol: TCP
+       port: 80
+       targetPort: 3000
+     type: LoadBalancer
+   
+
+ Add These Files to the Repository
+Commit and push the YAML files to the repository
+
+git add k8s-deployment.yaml k8s-service.yaml
+git commit -m "Add Kubernetes deployment files"
+git push origin main
+
+
+
+
+
+1. View the build logs for each stage in Jenkins.
+
+   - Code checkout.
+   - Build and test.
+   - Docker image build and push.
+   - Kubernetes deployment.
+
+
+
+ Access the Application
+
+
+   
+   kubectl get svc
+   
+
+ Open the application in your browser using http://52.234.46.144
+
+
+
+Automate the Pipeline
+Enable webhook integration with GitHub so the Jenkins pipeline triggers automatically on every `git push` to the `main` branch:
+
+  Go to the GitHub repository.
+  Navigate to Settings - Webhooks - Add webhook.
+
+   http://68.183.24.18:8080/github-webhook/
+   
